@@ -2,132 +2,170 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from harlequin import (
-    HarlequinAdapter,
-    HarlequinConnection,
-    HarlequinCursor,
-)
-from harlequin.autocomplete.completion import HarlequinCompletion
+import psycopg
+from harlequin import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
-from textual_fastdatatable.backend import AutoBackendType
+from .cli_options import QuestDBAdapter_OPTIONS
 
-from harlequin_questdb.cli_options import QuestDBAdapter_OPTIONS
+# QuestDB native type names (returned by table_columns()) → short display labels
+QUESTDB_TYPE_LABELS: dict[str, str] = {
+    "BOOLEAN": "t/f",
+    "BYTE": "#",
+    "SHORT": "#",
+    "INT": "##",
+    "LONG": "##",
+    "LONG128": "##",
+    "LONG256": "##",
+    "FLOAT": "#.#",
+    "DOUBLE": "#.#",
+    "CHAR": "s",
+    "STRING": "s",
+    "VARCHAR": "s",
+    "SYMBOL": "sym",
+    "DATE": "dt",
+    "TIMESTAMP": "ts",
+    "BINARY": "bin",
+    "UUID": "uid",
+    "GEOHASH": "geo",
+    "IPv4": "ip",
+}
+
+# PostgreSQL wire protocol OIDs → short display labels (used in cursor results)
+OID_TYPE_LABELS: dict[int, str] = {
+    16: "t/f",  # bool
+    21: "#",  # int2
+    23: "##",  # int4
+    20: "##",  # int8
+    700: "#.#",  # float4
+    701: "#.#",  # float8
+    1700: "#.#",  # numeric
+    25: "s",  # text
+    1043: "s",  # varchar
+    18: "s",  # char
+    1082: "dt",  # date
+    1114: "ts",  # timestamp
+    1184: "tstz",  # timestamptz
+    2950: "uid",  # uuid
+    17: "bin",  # bytea
+    114: "{}",  # json
+    3802: "{}",  # jsonb
+}
 
 
 class QuestDBCursor(HarlequinCursor):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.cur = args[0]
+    def __init__(self, cur: psycopg.Cursor) -> None:  # type: ignore[type-arg]
+        self._cur = cur
         self._limit: int | None = None
 
     def columns(self) -> list[tuple[str, str]]:
-        names = self.cur.column_names
-        types = self.cur.column_types
-        return list(zip(names, types))
+        assert self._cur.description is not None
+        return [(col.name, OID_TYPE_LABELS.get(col.type_code, "?")) for col in self._cur.description]
 
     def set_limit(self, limit: int) -> QuestDBCursor:
         self._limit = limit
         return self
 
-    def fetchall(self) -> AutoBackendType:
-        try:
-            if self._limit is None:
-                return self.cur.fetchall()
-            else:
-                return self.cur.fetchmany(self._limit)
-        except Exception as e:
-            raise HarlequinQueryError(
-                msg=str(e),
-                title="Harlequin encountered an error while executing your query.",
-            ) from e
+    def fetchall(self) -> list[tuple]:  # type: ignore[type-arg]
+        if self._limit is not None:
+            return self._cur.fetchmany(self._limit)
+        return self._cur.fetchall()
 
 
 class QuestDBConnection(HarlequinConnection):
-    def __init__(self, conn_str: Sequence[str], *args: Any, init_message: str = "", **kwargs: Any) -> None:
+    def __init__(
+        self,
+        conn: psycopg.Connection,  # type: ignore[type-arg]
+        init_message: str = "",
+    ) -> None:
+        self.conn = conn
         self.init_message = init_message
-        try:
-            self.conn = "your database library's connect method goes here"
-        except Exception as e:
-            raise HarlequinConnectionError(msg=str(e), title="Harlequin could not connect to your database.") from e
 
-    def execute(self, query: str) -> HarlequinCursor | None:
+    def execute(self, query: str) -> QuestDBCursor | None:
         try:
-            cur = self.conn.execute(query)  # type: ignore
-        except Exception as e:
+            cur = self.conn.cursor()
+            cur.execute(query, prepare=False)  # type: ignore[arg-type]  # simple query protocol → text results
+            if cur.description is not None:
+                return QuestDBCursor(cur)
+            return None
+        except psycopg.Error as e:
             raise HarlequinQueryError(
                 msg=str(e),
-                title="Harlequin encountered an error while executing your query.",
+                title="QuestDB raised an error on this query.",
             ) from e
-        else:
-            if cur is not None:
-                return QuestDBCursor(cur)
-            else:
-                return None
 
     def get_catalog(self) -> Catalog:
-        databases = self.conn.list_databases()
-        db_items: list[CatalogItem] = []
-        for db in databases:
-            schemas = self.conn.list_schemas_in_db(db)
-            schema_items: list[CatalogItem] = []
-            for schema in schemas:
-                relations = self.conn.list_relations_in_schema(schema)
-                rel_items: list[CatalogItem] = []
-                for rel, rel_type in relations:
-                    cols = self.conn.list_columns_in_relation(rel)
+        table_items: list[CatalogItem] = []
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("SELECT table_name FROM tables() ORDER BY table_name")
+                table_names = [row[0] for row in cur.fetchall()]
+
+            for table_name in table_names:
+                with self.conn.cursor() as cur:
+                    cur.execute(f'SELECT "column", "type" FROM table_columns(\'{table_name}\')')  # type: ignore[arg-type]
                     col_items = [
                         CatalogItem(
-                            qualified_identifier=f'"{db}"."{schema}"."{rel}"."{col}"',
-                            query_name=f'"{col}"',
-                            label=col,
-                            type_label=col_type,
+                            qualified_identifier=f'"{table_name}"."{col_name}"',
+                            query_name=f'"{col_name}"',
+                            label=col_name,
+                            type_label=QUESTDB_TYPE_LABELS.get(col_type, str(col_type)[:3].lower()),
                         )
-                        for col, col_type in cols
+                        for col_name, col_type in cur.fetchall()
                     ]
-                    rel_items.append(
-                        CatalogItem(
-                            qualified_identifier=f'"{db}"."{schema}"."{rel}"',
-                            query_name=f'"{db}"."{schema}"."{rel}"',
-                            label=rel,
-                            type_label=rel_type,
-                            children=col_items,
-                        )
-                    )
-                schema_items.append(
+                table_items.append(
                     CatalogItem(
-                        qualified_identifier=f'"{db}"."{schema}"',
-                        query_name=f'"{db}"."{schema}"',
-                        label=schema,
-                        type_label="s",
-                        children=rel_items,
+                        qualified_identifier=f'"{table_name}"',
+                        query_name=f'"{table_name}"',
+                        label=table_name,
+                        type_label="table",
+                        children=col_items,
                     )
                 )
-            db_items.append(
-                CatalogItem(
-                    qualified_identifier=f'"{db}"',
-                    query_name=f'"{db}"',
-                    label=db,
-                    type_label="db",
-                    children=schema_items,
-                )
-            )
-        return Catalog(items=db_items)
+        except psycopg.Error as e:
+            raise HarlequinQueryError(
+                msg=str(e),
+                title="QuestDB raised an error loading the catalog.",
+            ) from e
 
-    def get_completions(self) -> list[HarlequinCompletion]:
-        extra_keywords = ["foo", "bar", "baz"]
-        return [
-            HarlequinCompletion(label=item, type_label="kw", value=item, priority=1000, context=None)
-            for item in extra_keywords
-        ]
+        return Catalog(items=table_items)
+
+    def close(self) -> None:
+        self.conn.close()
 
 
 class QuestDBAdapter(HarlequinAdapter):
     ADAPTER_OPTIONS = QuestDBAdapter_OPTIONS
 
-    def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
+    def __init__(
+        self,
+        conn_str: Sequence[str],
+        host: str = "localhost",
+        port: str = "8812",
+        username: str = "admin",
+        password: str = "quest",
+        **_: Any,
+    ) -> None:
         self.conn_str = conn_str
-        self.options = options
+        self.host = host
+        self.port = int(port)
+        self.username = username
+        self.password = password
 
     def connect(self) -> QuestDBConnection:
-        conn = QuestDBConnection(self.conn_str, self.options)
-        return conn
+        dsn = (
+            self.conn_str[0]
+            if self.conn_str
+            else (f"host={self.host} port={self.port} user={self.username} password={self.password} dbname=qdb")
+        )
+        try:
+            conn = psycopg.connect(dsn, autocommit=True)
+        except psycopg.Error as e:
+            raise HarlequinConnectionError(
+                msg=str(e),
+                title="QuestDB adapter could not connect.",
+            ) from e
+        return QuestDBConnection(
+            conn,
+            init_message=f"Connected to QuestDB at {self.host}:{self.port}.",
+        )
