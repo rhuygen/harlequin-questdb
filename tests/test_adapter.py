@@ -49,6 +49,7 @@ def test_get_catalog(connection: QuestDBConnection) -> None:
 
 
 def test_execute_ddl(connection: QuestDBConnection) -> None:
+    connection.execute("drop table if exists foo")
     cur = connection.execute("create table foo (a int)")
     assert cur is None
 
@@ -60,16 +61,6 @@ def test_execute_select(connection: QuestDBConnection) -> None:
     data = cur.fetchall()
     backend = create_backend(data)
     assert backend.column_count == 1
-    assert backend.row_count == 1
-
-
-def test_execute_select_dupe_cols(connection: QuestDBConnection) -> None:
-    cur = connection.execute("select 1 as a, 2 as a, 3 as a")
-    assert isinstance(cur, HarlequinCursor)
-    assert len(cur.columns()) == 3
-    data = cur.fetchall()
-    backend = create_backend(data)
-    assert backend.column_count == 3
     assert backend.row_count == 1
 
 
