@@ -12,10 +12,10 @@ from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
 from textual_fastdatatable.backend import AutoBackendType
 
-from harlequin_myadapter.cli_options import MYADAPTER_OPTIONS
+from harlequin_questdb.cli_options import QuestDBAdapter_OPTIONS
 
 
-class MyCursor(HarlequinCursor):
+class QuestDBCursor(HarlequinCursor):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.cur = args[0]
         self._limit: int | None = None
@@ -25,7 +25,7 @@ class MyCursor(HarlequinCursor):
         types = self.cur.column_types
         return list(zip(names, types))
 
-    def set_limit(self, limit: int) -> MyCursor:
+    def set_limit(self, limit: int) -> QuestDBCursor:
         self._limit = limit
         return self
 
@@ -42,17 +42,13 @@ class MyCursor(HarlequinCursor):
             ) from e
 
 
-class MyConnection(HarlequinConnection):
-    def __init__(
-        self, conn_str: Sequence[str], *args: Any, init_message: str = "", **kwargs: Any
-    ) -> None:
+class QuestDBConnection(HarlequinConnection):
+    def __init__(self, conn_str: Sequence[str], *args: Any, init_message: str = "", **kwargs: Any) -> None:
         self.init_message = init_message
         try:
             self.conn = "your database library's connect method goes here"
         except Exception as e:
-            raise HarlequinConnectionError(
-                msg=str(e), title="Harlequin could not connect to your database."
-            ) from e
+            raise HarlequinConnectionError(msg=str(e), title="Harlequin could not connect to your database.") from e
 
     def execute(self, query: str) -> HarlequinCursor | None:
         try:
@@ -64,7 +60,7 @@ class MyConnection(HarlequinConnection):
             ) from e
         else:
             if cur is not None:
-                return MyCursor(cur)
+                return QuestDBCursor(cur)
             else:
                 return None
 
@@ -120,20 +116,18 @@ class MyConnection(HarlequinConnection):
     def get_completions(self) -> list[HarlequinCompletion]:
         extra_keywords = ["foo", "bar", "baz"]
         return [
-            HarlequinCompletion(
-                label=item, type_label="kw", value=item, priority=1000, context=None
-            )
+            HarlequinCompletion(label=item, type_label="kw", value=item, priority=1000, context=None)
             for item in extra_keywords
         ]
 
 
-class MyAdapter(HarlequinAdapter):
-    ADAPTER_OPTIONS = MYADAPTER_OPTIONS
+class QuestDBAdapter(HarlequinAdapter):
+    ADAPTER_OPTIONS = QuestDBAdapter_OPTIONS
 
     def __init__(self, conn_str: Sequence[str], **options: Any) -> None:
         self.conn_str = conn_str
         self.options = options
 
-    def connect(self) -> MyConnection:
-        conn = MyConnection(self.conn_str, self.options)
+    def connect(self) -> QuestDBConnection:
+        conn = QuestDBConnection(self.conn_str, self.options)
         return conn
