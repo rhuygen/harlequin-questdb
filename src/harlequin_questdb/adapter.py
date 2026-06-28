@@ -6,6 +6,8 @@ import psycopg
 from harlequin import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.catalog import Catalog, CatalogItem
 from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
+from psycopg import conninfo
+
 from .cli_options import QuestDBAdapter_OPTIONS
 
 # QuestDB native type names (returned by table_columns()) → short display labels
@@ -151,6 +153,17 @@ class QuestDBAdapter(HarlequinAdapter):
         self.port = int(port)
         self.username = username
         self.password = password
+
+    @property
+    def connection_id(self) -> str | None:
+        if self.conn_str:
+            return conninfo.make_conninfo(self.conn_str[0])
+        return conninfo.make_conninfo(
+            host=self.host,
+            port=str(self.port),
+            user=self.username,
+            dbname="qdb",
+        )
 
     def connect(self) -> QuestDBConnection:
         dsn = (
