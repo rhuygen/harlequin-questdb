@@ -78,18 +78,49 @@ class QuestDBConnection(HarlequinConnection):
     def __init__(
         self,
         conn: psycopg.Connection,  # type: ignore[type-arg]
+        dsn: str,
         init_message: str = "",
     ) -> None:
         self.conn = conn
+        self._dsn = dsn
         self.init_message = init_message
 
+    def _reconnect(self) -> None:
+        try:
+            self.conn = psycopg.connect(self._dsn, autocommit=True)
+        except psycopg.Error as e:
+            raise HarlequinConnectionError(
+                msg=str(e),
+                title="QuestDB adapter could not reconnect.",
+            ) from e
+
     def execute(self, query: str) -> QuestDBCursor | None:
+        if self.conn.closed:
+            self._reconnect()
         try:
             cur = self.conn.cursor()
             cur.execute(query, prepare=False)  # type: ignore[arg-type]  # simple query protocol → text results
             if cur.description is not None:
                 return QuestDBCursor(cur)
             return None
+        except psycopg.OperationalError as e:
+            if not self.conn.closed:
+                raise HarlequinQueryError(
+                    msg=str(e),
+                    title="QuestDB raised an error on this query.",
+                ) from e
+            self._reconnect()
+            try:
+                cur = self.conn.cursor()
+                cur.execute(query, prepare=False)  # type: ignore[arg-type]
+                if cur.description is not None:
+                    return QuestDBCursor(cur)
+                return None
+            except psycopg.Error as e2:
+                raise HarlequinQueryError(
+                    msg=str(e2),
+                    title="QuestDB raised an error on this query.",
+                ) from e2
         except psycopg.Error as e:
             raise HarlequinQueryError(
                 msg=str(e),
@@ -97,6 +128,8 @@ class QuestDBConnection(HarlequinConnection):
             ) from e
 
     def get_catalog(self) -> Catalog:
+        if self.conn.closed:
+            self._reconnect()
         table_items: list[CatalogItem] = []
         try:
             with self.conn.cursor() as cur:
@@ -180,5 +213,6 @@ class QuestDBAdapter(HarlequinAdapter):
             ) from e
         return QuestDBConnection(
             conn,
+            dsn=dsn,
             init_message=f"Connected to QuestDB at {self.host}:{self.port}.",
         )

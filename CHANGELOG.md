@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-29
+
+### Fixed
+
+- Automatic reconnection when QuestDB closes an idle connection. `QuestDBConnection` now stores the DSN and transparently reconnects on `OperationalError` before retrying the query.
+
 ## [0.2.0] - 2026-06-29
 
 ### Added
@@ -22,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Catalog browser populated via QuestDB's `tables()` and `table_columns()` SQL functions.
 - Type label mappings for QuestDB-native types (catalog) and PostgreSQL wire protocol OIDs (query results).
 
-[Unreleased]: https://github.com/tRik/harlequin-questdb/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/tRik/harlequin-questdb/releases/tag/v0.2.0
+[Unreleased]: https://github.com/tRik/harlequin-questdb/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/tRik/harlequin-questdb/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/tRik/harlequin-questdb/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tRik/harlequin-questdb/releases/tag/v0.1.0
