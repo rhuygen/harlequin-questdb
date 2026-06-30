@@ -1,5 +1,3 @@
-import sys
-
 import pytest
 from harlequin.adapter import HarlequinAdapter, HarlequinConnection, HarlequinCursor
 from harlequin.catalog import Catalog, CatalogItem
@@ -7,10 +5,7 @@ from harlequin.exception import HarlequinConnectionError, HarlequinQueryError
 from harlequin_questdb.adapter import QuestDBAdapter, QuestDBConnection
 from textual_fastdatatable.backend import create_backend
 
-if sys.version_info < (3, 10):
-    from importlib_metadata import entry_points
-else:
-    from importlib.metadata import entry_points
+from importlib.metadata import entry_points
 
 
 def test_plugin_discovery() -> None:

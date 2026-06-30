@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-30
+
+### Changed
+
+- Lowered the minimum required Python version from 3.12 to 3.10, in line with Harlequin itself.
+
 ## [0.3.1] - 2026-06-29
 
 - Updated the README file
@@ -32,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Catalog browser populated via QuestDB's `tables()` and `table_columns()` SQL functions.
 - Type label mappings for QuestDB-native types (catalog) and PostgreSQL wire protocol OIDs (query results).
 
-[Unreleased]: https://github.com/tRik/harlequin-questdb/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/tRik/harlequin-questdb/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/tRik/harlequin-questdb/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/tRik/harlequin-questdb/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/tRik/harlequin-questdb/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tRik/harlequin-questdb/compare/v0.1.0...v0.2.0
